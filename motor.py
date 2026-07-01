@@ -566,8 +566,9 @@ def run_motor(
     df_ur = build_active_user_roles(df_users)
 
     progress("Construyendo mapa IAM...", 15)
-    iam_map = build_iam_map(df_iam)
+    iam_map = build_iam_map(df_iam)          # ≤5 roles: for role assignment
     iam_tcodes, tc_to_name, name_to_tc = _iam_lookups(df_iam)
+    # iam_tcodes = ALL TCodes in IAM regardless of role count (for "mapped?" check)
     df_iam_d = df_iam.loc[:, ~df_iam.columns.duplicated()]
     iam_role_name = dict(zip(df_iam_d["BRT_ID"].values,
                               df_iam_d["BRT_Name"].values))
@@ -611,12 +612,22 @@ def run_motor(
             grow_roles = set()
 
             if tc in iam_map:
+                # Direct IAM match, ≤5 roles → assign those roles
                 grow_roles = iam_map[tc]
             elif tc in eq_lookup and eq_lookup[tc] in iam_map:
+                # Via equivalencias, ≤5 roles → assign those roles
                 grow_roles = iam_map[eq_lookup[tc]]
 
             if grow_roles:
                 user_grow_roles[user].update(grow_roles)
+                user_tcode_status[user][tc] = "mapped"
+            elif tc in iam_tcodes:
+                # TCode exists in IAM but app appears in >5 roles (e.g. ME23N, FB03).
+                # Mark as mapped — access comes through other roles already assigned.
+                # Do NOT add to gap.
+                user_tcode_status[user][tc] = "mapped"
+            elif tc in eq_lookup and eq_lookup[tc] in iam_tcodes:
+                # Via equivalencias, app exists in IAM but >5 roles
                 user_tcode_status[user][tc] = "mapped"
             else:
                 if tc not in user_tcode_status[user]:
