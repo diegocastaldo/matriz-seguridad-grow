@@ -652,9 +652,9 @@ def run_motor(
             "Usuario": user,
             "Roles Grow a Asignar": ", ".join(roles),
             "Cant. Roles": len(roles),
-            "TCodes Activos sin Equiv.": len(pending),
-            "Estado": ("✅ Completo" if not pending
-                       else f"⚠️ {len(pending)} TCodes pendientes"),
+            "TCodes Pendientes": ", ".join(sorted(pending)) if pending else "",
+            "Cant. Pendientes": len(pending),
+            "Estado": "✅ Completo" if not pending else f"⚠️ {len(pending)} pendientes",
         })
         for r in roles:
             motor_rows.append({
@@ -715,7 +715,7 @@ def run_motor(
 
     stats = {
         "total_users": len(df_output),
-        "complete_users": int((df_output["TCodes Activos sin Equiv."] == 0).sum())
+        "complete_users": int((df_output["Cant. Pendientes"] == 0).sum())
                           if len(df_output) else 0,
         "total_roles_assigned": (int(df_motor["Grow Role Template ID"].nunique())
                                  if len(df_motor) else 0),
@@ -801,26 +801,43 @@ def export_excel(result: dict, df_equiv: pd.DataFrame,
                   f"{result['stats']['total_users']} usuarios  |  "
                   f"{result['stats']['complete_users']} completos", 5)
     hdr(ws, s, ["Usuario", "Roles Grow a Asignar", "Cant. Roles",
-                "TCodes sin Equiv.", "Estado"], "00B050")
+                "TCodes Pendientes de Mapear", "Cant.", "Estado"], "00B050")
     df_o = result["df_output"]
     for i, (_, row) in enumerate(df_o.iterrows()):
         r = s + 1 + i
         est = str(row["Estado"])
-        bg = "E2EFDA" if "Completo" in est else "FFF2CC"
-        fg = "375623" if "Completo" in est else "7E6000"
-        for ci, val in enumerate(row.values, 1):
+        is_complete = "Completo" in est
+        bg = "E2EFDA" if is_complete else "FFF2CC"
+        fg = "375623" if is_complete else "7E6000"
+
+        vals = [
+            row["Usuario"],
+            row["Roles Grow a Asignar"],
+            row["Cant. Roles"],
+            row["TCodes Pendientes"],   # actual list of pending TCodes
+            row["Cant. Pendientes"],    # count
+            row["Estado"],
+        ]
+        for ci, val in enumerate(vals, 1):
             cl = ws.cell(row=r, column=ci,
                          value=(val if not pd.isna(val) else ""))
             cl.font = Font(name="Arial", size=9, color=fg)
+            # cols 4, 5, 6 get the status colour; others alternate grey/white
             cl.fill = hfill(
-                bg if ci in (4, 5) else ("F2F2F2" if i % 2 == 0 else "FFFFFF"))
+                bg if ci in (4, 5, 6) else ("F2F2F2" if i % 2 == 0 else "FFFFFF"))
             cl.border = bdr()
-            cl.alignment = Alignment(vertical="center",
-                                     horizontal="center" if ci in (3, 4) else "left",
-                                     wrap_text=(ci == 2))
-        ws.row_dimensions[r].height = (
-            30 if len(str(row["Roles Grow a Asignar"])) > 80 else 16)
-    widths(ws, [18, 90, 12, 18, 28])
+            cl.alignment = Alignment(
+                vertical="center",
+                horizontal="center" if ci in (3, 5) else "left",
+                wrap_text=(ci in (2, 4)))   # wrap roles AND pending TCodes
+
+        # Row height: taller when pending list is long
+        pending_str = str(row["TCodes Pendientes"])
+        roles_str   = str(row["Roles Grow a Asignar"])
+        max_len = max(len(pending_str), len(roles_str))
+        ws.row_dimensions[r].height = max(16, min(80, max_len // 6))
+
+    widths(ws, [18, 85, 12, 55, 10, 24])
     ws.freeze_panes = f"A{s+1}"
 
     # EQUIVALENCIAS (for reference)
